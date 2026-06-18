@@ -4,9 +4,14 @@ Provider Onboarding Scripts
 This repository contains scripts and instructions to connect your cloud accounts (AWS, Azure, GCP) to the Emma platform. Follow the guide for each provider you want to onboard.
 
 Overview
-ProviderTypeTool RequiredAWSShell scriptAWS Cloud ShellAzureShell scriptAzure Cloud ShellGCPManual instructionsGCP Console (browser)
+
+Provider     Type                ToolRequired
+AWS          Shell script        AWS Cloud Shell
+Azure        Shell script        Azure Cloud Shell
+GCP          Manual instructions GCP Console (browser)
 
 AWS
+
 Prerequisites
 
 Access to AWS Cloud Shell (Bash)
@@ -36,8 +41,8 @@ At the end of the run, the script prints your Access Key ID and Secret Access Ke
 Note: Region activation runs in the background after the script completes. Full activation may take several minutes. Check status with:
 account list-regions --region-opt-status-contains ENABLED ENABLING
 
-
 Azure
+
 Prerequisites
 
 Global Administrator role in your Azure tenant
@@ -48,8 +53,17 @@ Setup
 
 Open Azure Cloud Shell and select Bash.
 Upload or paste the contents of scripts/Azure/onboarding.sh.
+
 Open the file and fill in all seven required variables at the top:
-VariableExample valueSUBSCRIPTION_IDxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxDISPLAY_NAMEMyCompany Service AccountGIVEN_NAMEMyCompanySURNAMEServiceUSER_PRINCIPAL_NAMEmycompany-service@mycompany.onmicrosoft.comMAIL_NICKNAMEmycompany-servicePASSWORD(strong password)
+
+Variable                  Example value
+SUBSCRIPTION_ID           xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+DISPLAY_NAME              MyCompany Service Account
+GIVEN_NAME                MyCompany
+SURNAME                   Service
+USER_PRINCIPAL_NAME       mycompany-service@mycompany.onmicrosoft.com
+MAIL_NICKNAME             mycompany-service
+PASSWORD                  (strong password)
 
 Run the script:
 
@@ -72,8 +86,8 @@ Save these immediately. If admin consent for Graph API permissions fails, grant 
 
 Tip: To delete and recreate an existing service user instead of reusing it, set RECREATE_USER=true before running.
 
-
 GCP
+
 GCP onboarding is done manually through the browser console — no script is required.
 Prerequisites
 
@@ -95,7 +109,6 @@ Storage Component API
 Stackdriver Monitoring API
 Cloud Quotas API
 
-
 Verify the default service account — After enabling the Compute Engine API, confirm that the Compute Engine default service account was automatically created under IAM & Admin → Service Accounts.
 Assign roles — Go to IAM, find the Compute Engine default service account, and assign it these six roles:
 
@@ -106,13 +119,10 @@ Role Administrator
 Service Account Key Admin
 Project IAM Admin
 
-
 Create a JSON key — In Service Accounts, open the default service account, go to Keys → Add Key → Create new key, select JSON, and download the file.
 Provide the key to Emma — Copy the contents of the downloaded JSON file into the Emma platform's input field.
 
-
 Security note: The JSON key grants broad access to your project. Do not share it beyond the Emma platform.
-
 
 License
 See LICENSE for details.
