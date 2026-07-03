@@ -25,9 +25,16 @@ Supported providers: **AWS · Azure · GCP**
 
 ### Setup
 
-1. Open **AWS Cloud Shell**.
-2. Upload or paste the contents of `scripts/AWS/onboarding.sh`.
-3. Set the `ENV` variable on line 19 to a short identifier for your organization:
+1. Open AWS Cloud Shell from the AWS Portal.
+2. Ensure you're using Bash (not PowerShell).
+3. Copy and paste the contents of `scripts/AWS/onboarding.sh` into a file, e.g., "onboarding.sh":
+   nano onboarding.sh
+4. Save the file (Ctrl+O, then Ctrl+X).
+5. Make the file executable:
+   chmod +x onboarding.sh
+6. Run the script:
+   ./onboarding.sh
+7. . Set the `ENV` variable on line 19 to a short identifier for your organization:
    ```bash
    ENV="mycompany"
    ```
@@ -64,9 +71,16 @@ aws account list-regions --region-opt-status-contains ENABLED ENABLING
 
 ### Setup
 
-1. Open **Azure Cloud Shell** and select **Bash**.
-2. Upload or paste the contents of `scripts/Azure/onboarding.sh`.
-3. Fill in the required variables at the top of the file:
+1. Open Azure Cloud Shell from the Azure Portal.
+2. Ensure you're using Bash (not PowerShell).
+3. Copy and paste the contents of `scripts/Azure/onboarding.sh` into a file, e.g., "onboarding.sh":
+   nano onboarding.sh
+4. Save the file (Ctrl+O, then Ctrl+X).
+5. Make the file executable:
+   chmod +x onboarding.sh
+6. Run the script:
+   ./onboarding.sh
+7. Fill in the required variables at the top of the file:
 
    | Variable               | Example                                      |
    |------------------------|----------------------------------------------|
@@ -109,59 +123,60 @@ Azure Portal → **App registrations** → `emma-connection` → **API permissio
 
 ## GCP
 
-GCP onboarding is performed manually through the browser console — no script is required.
-
 ### Prerequisites
 
 - An existing GCP project with **billing enabled**
 - **Project Owner** or **Editor + IAM Admin** permissions
+- Access to [GCP Cloud Shell](https://shell.cloud.google.com/) (Bash mode)
 
 ### Setup
 
-Follow the full instructions in `scripts/GCP/Instructions.md`. Summary:
+1. Open GCP Cloud Shell from the GCP Portal.
+2. Ensure you're using Bash (not PowerShell).
+3. Copy and paste the contents of `scripts/GCP/onboarding.sh` into a file, e.g., `onboarding.sh`:
+   ```bash
+   nano onboarding.sh
+   ```
+4. Save the file (Ctrl+O, then Ctrl+X).
+5. Make the file executable:
+   ```bash
+   chmod +x onboarding.sh
+   ```
+6. Fill in the required variables at the top of the file:
 
-**Step 1 — Enable APIs**
+   | Variable        | Example                     |
+   |-----------------|-----------------------------|
+   | `PROJECT_ID`    | `my-project-123`            |
+   | `KEY_FILE_NAME` | `sa-key.json` *(optional)*  |
 
-In the GCP Console, enable the following APIs on your project:
+   If `KEY_FILE_NAME` is left empty, the key file will be named `<project_id>-compute-sa-key.json` automatically.
 
-- Identity and Access Management (IAM) API
-- Resource Manager API
-- Compute Engine API
-- Cloud Billing API
-- Cloud Build API
-- Cloud Storage API
-- Cloud Storage Component API
-- Cloud Monitoring (Stackdriver) API
-- Cloud Quotas API
+7. Run the script:
+   ```bash
+   ./onboarding.sh
+   ```
 
-**Step 2 — Verify the default service account**
+### What the script does
 
-After enabling the Compute Engine API, confirm the **Compute Engine default service account** was created under **IAM & Admin → Service Accounts**.
+- Enables all required GCP APIs (IAM, Compute Engine, Cloud Billing, Cloud Build, Cloud Storage, Cloud Monitoring, Cloud Quotas, and others)
+- Locates the **Compute Engine default service account** for the project
+- Assigns all required IAM roles to the service account
+- Generates a **JSON key file** for the service account
 
-**Step 3 — Assign roles**
+### Output
 
-In **IAM**, find the Compute Engine default service account and assign the following roles:
+The script saves a JSON key file to the current directory and prints a summary:
 
-- Compute Admin
-- Service Account User
-- Service Account Admin
-- Role Administrator
-- Service Account Key Admin
-- Project IAM Admin
+```
+  Project ID   : <your-project-id>
+  Service Acct : <project-number>-compute@developer.gserviceaccount.com
+  Key file     : <key-file-name>.json
+```
 
-**Step 4 — Create a JSON key**
-
-In **Service Accounts**, open the default service account → **Keys** → **Add Key** → **Create new key** → select **JSON** → download the file.
-
-**Step 5 — Provide the key to emma**
-
-Paste the contents of the downloaded JSON file into the emma platform's credential input field.
-
-> ⚠️ **Security notice:** The JSON key grants broad access to your GCP project. Do not share it outside the emma platform.
+> ⚠️ **Security notice:** The JSON key grants broad access to your GCP project. Paste its contents into the emma platform's credential input field and do not share it elsewhere.
 
 ---
 
 ## Support
 
 If you encounter issues during setup, open a support request through the emma platform.
-

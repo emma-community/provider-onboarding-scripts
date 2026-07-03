@@ -1,9 +1,16 @@
 #!/bin/bash
 
 ###########################################
-# Azure Service User Onboarding Script
-# Run in Azure Cloud Shell (Bash)
-# Prerequisites: executed by Global Administrator in Cloud Shell
+# How to use this script in Azure Cloud Shell:
+# 1. Open Azure Cloud Shell from the Azure Portal.
+# 2. Ensure you're using Bash (not PowerShell).
+# 3. Copy and paste this script into a file, e.g., "onboarding.sh":
+#    nano onboarding.sh
+# 4. Save the file (Ctrl+O, then Ctrl+X).
+# 5. Make the file executable:
+#    chmod +x onboarding.sh
+# 6. Run the script:
+#    ./onboarding.sh
 ###########################################
 
 #######################################
