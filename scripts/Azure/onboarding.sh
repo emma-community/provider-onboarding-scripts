@@ -45,6 +45,7 @@ SCOPE="/subscriptions/$SUBSCRIPTION_ID"
 GRAPH_API_ID="00000003-0000-0000-c000-000000000000"
 GRAPH_PERMISSION="User.ReadWrite.All"
 RECREATE_USER=false
+FAILURES=0                         # incremented by steps that fail; checked in the final summary
 
 #######################################
 # Inline permission definitions (no external files needed)
@@ -400,19 +401,44 @@ create_custom_role_and_assign() {
 
 process_image() {
     local publisher=$1 offer=$2 sku=$3
+    local TERMS OUT
     echo "[INFO] Checking marketplace terms: $publisher / $offer / $sku"
-    TERMS=$($CLI vm image terms show \
+
+    TERMS=$($CLI vm image terms show --subscription "$SUBSCRIPTION_ID" \
         --publisher "$publisher" --offer "$offer" --plan "$sku" 2>/dev/null)
-    if echo "$TERMS" | grep -q '"accepted": true'; then
+    if echo "$TERMS" | grep -qi '"accepted"[[:space:]]*:[[:space:]]*true'; then
         echo "[INFO] Terms already accepted."
+        return 0
+    fi
+
+    if OUT=$($CLI vm image terms accept --subscription "$SUBSCRIPTION_ID" \
+                --publisher "$publisher" --offer "$offer" --plan "$sku" 2>&1); then
+        echo "[SUCCESS] Terms accepted."
     else
-        $CLI vm image terms accept \
-            --publisher "$publisher" --offer "$offer" --plan "$sku" \
-            > /dev/null 2>&1 \
-            && echo "[SUCCESS] Terms accepted." \
-            || echo "[WARNING] Could not accept terms for $publisher:$offer:$sku"
+        # A silent failure here surfaces much later as ResourcePurchaseValidationFailed
+        # at VM creation time, so print what az actually said and fail the run.
+        echo "[ERROR] Could not accept terms for $publisher:$offer:$sku" >&2
+        echo "$OUT" | sed 's/^/        /' >&2
+        FAILURES=$((FAILURES+1))
+        return 1
     fi
 }
+
+#######################################
+# STEP 0 — Bind this session to the target subscription
+#
+# Marketplace image terms and resource-provider registrations are per-subscription.
+# Without this, they are applied to whatever subscription Cloud Shell happens to
+# have selected, and the onboarded subscription is left unconfigured.
+#######################################
+echo ""
+echo "===== STEP 0: Selecting subscription ====="
+$CLI account set --subscription "$SUBSCRIPTION_ID" \
+    || handle_error "Cannot select subscription '$SUBSCRIPTION_ID'. Check the ID and your access to it."
+ACTIVE_SUB=$($CLI account show --query id -o tsv)
+[ "$ACTIVE_SUB" = "$SUBSCRIPTION_ID" ] \
+    || handle_error "Active subscription is '$ACTIVE_SUB', expected '$SUBSCRIPTION_ID'."
+echo "[SUCCESS] Active subscription: $SUBSCRIPTION_ID"
 
 #######################################
 # STEP 1 — Create App Registration + Service Principal
@@ -630,47 +656,82 @@ create_custom_role_and_assign \
     "$PERM_CustomQuotaActions" "$USER_ID"
 
 #######################################
-# STEP 7 — Accept marketplace image terms
+# STEP 7 — Register resource providers
+#
+# Runs before terms acceptance: 'az vm image terms' goes through
+# Microsoft.MarketplaceOrdering, which must be registered first.
 #######################################
 echo ""
-echo "===== STEP 10: Accepting marketplace image terms ====="
+echo "===== STEP 10: Registering resource providers ====="
 
-publisher="" offer="" sku=""
-while IFS= read -r line; do
-    if echo "$line" | grep -q '"publisher"'; then
-        publisher=$(echo "$line" | sed -n 's/.*"publisher": *"\([^"]*\)".*/\1/p')
-    elif echo "$line" | grep -q '"offer"'; then
-        offer=$(echo "$line" | sed -n 's/.*"offer": *"\([^"]*\)".*/\1/p')
-    elif echo "$line" | grep -q '"sku"'; then
-        sku=$(echo "$line" | sed -n 's/.*"sku": *"\([^"]*\)".*/\1/p')
+for NS in Microsoft.MarketplaceOrdering Microsoft.RecoveryServices \
+          Microsoft.Cdn Microsoft.Compute Microsoft.Databricks \
+          Microsoft.Storage Microsoft.Network Microsoft.Quota; do
+    echo "[INFO] Registering $NS..."
+    if OUT=$($CLI provider register --namespace "$NS" \
+                --subscription "$SUBSCRIPTION_ID" 2>&1); then
+        echo "[SUCCESS] $NS registered."
+    else
+        echo "[ERROR] Could not register $NS." >&2
+        echo "$OUT" | sed 's/^/        /' >&2
+        FAILURES=$((FAILURES+1))
     fi
+done
+
+# Registration is asynchronous — wait for the one the next step depends on.
+echo "[INFO] Waiting for Microsoft.MarketplaceOrdering registration to complete..."
+$CLI provider register --namespace Microsoft.MarketplaceOrdering \
+    --subscription "$SUBSCRIPTION_ID" --wait > /dev/null 2>&1 \
+    && echo "[SUCCESS] Microsoft.MarketplaceOrdering ready." \
+    || echo "[WARNING] Wait failed — terms acceptance below may fail."
+
+#######################################
+# STEP 8 — Accept marketplace image terms
+#
+# Each IMAGES_JSON record holds publisher, offer and sku on one line, so all
+# three are read from the same line. (An if/elif chain here would only ever
+# match the first key and silently accept nothing.)
+#######################################
+echo ""
+echo "===== STEP 11: Accepting marketplace image terms ====="
+
+IMAGES_PROCESSED=0
+while IFS= read -r line; do
+    case "$line" in *'"publisher"'*) ;; *) continue ;; esac
+
+    publisher=$(printf '%s' "$line" \
+        | sed -n 's/.*"publisher"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    offer=$(printf '%s' "$line" \
+        | sed -n 's/.*"offer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    sku=$(printf '%s' "$line" \
+        | sed -n 's/.*"sku"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
     if [ -n "$publisher" ] && [ -n "$offer" ] && [ -n "$sku" ]; then
         process_image "$publisher" "$offer" "$sku"
-        publisher="" offer="" sku=""
+        IMAGES_PROCESSED=$((IMAGES_PROCESSED+1))
+    else
+        echo "[ERROR] Could not parse image record: $line" >&2
+        FAILURES=$((FAILURES+1))
     fi
 done <<< "$IMAGES_JSON"
 
-#######################################
-# STEP 8 — Register resource providers
-#######################################
-echo ""
-echo "===== STEP 11: Registering resource providers ====="
-
-for NS in Microsoft.RecoveryServices Microsoft.Cdn Microsoft.Compute \
-          Microsoft.Databricks Microsoft.Storage Microsoft.Network \
-          Microsoft.Quota; do
-    echo "[INFO] Registering $NS..."
-    $CLI provider register --namespace "$NS" > /dev/null 2>&1 \
-        && echo "[SUCCESS] $NS registered." \
-        || echo "[WARNING] Could not register $NS."
-done
+IMAGES_EXPECTED=$(echo "$IMAGES_JSON" | grep -c '"publisher"')
+echo "[INFO] Processed $IMAGES_PROCESSED of $IMAGES_EXPECTED marketplace images."
+if [ "$IMAGES_PROCESSED" -ne "$IMAGES_EXPECTED" ]; then
+    echo "[ERROR] Not every image in IMAGES_JSON was processed." >&2
+    FAILURES=$((FAILURES+1))
+fi
 
 #######################################
 # Final summary
 #######################################
 echo ""
 echo "========================================="
-echo " Onboarding complete"
+if [ "$FAILURES" -eq 0 ]; then
+    echo " Onboarding complete"
+else
+    echo " Onboarding INCOMPLETE — $FAILURES step(s) failed"
+fi
 echo "========================================="
 echo " tenantId:       $TENANT_ID"
 echo " subscriptionId: $SUBSCRIPTION_ID"
@@ -679,4 +740,12 @@ echo " clientSecret:   $CLIENT_SECRET"
 echo " userEmail:      $USER_PRINCIPAL_NAME"
 echo " password:       $PASSWORD"
 echo "========================================="
-echo "[INFO] Script executed successfully."
+
+if [ "$FAILURES" -eq 0 ]; then
+    echo "[INFO] Script executed successfully."
+    exit 0
+fi
+
+echo "[ERROR] $FAILURES step(s) failed — see the [ERROR] lines above." >&2
+echo "[ERROR] Do not treat this subscription as onboarded until they are resolved." >&2
+exit 1
