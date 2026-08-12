@@ -441,18 +441,48 @@ ACTIVE_SUB=$($CLI account show --query id -o tsv)
 echo "[SUCCESS] Active subscription: $SUBSCRIPTION_ID"
 
 #######################################
-# STEP 1 — Create App Registration + Service Principal
+# STEP 1 — Create or reuse App Registration + Service Principal
+#
+# Both objects are looked up before being created: display names are not unique
+# in Entra ID, so 'az ad app create' would happily add a duplicate app on every
+# run, and 'az ad sp create' hard-fails once a service principal exists for the
+# appId ("service principal name ... is already in use").
 #######################################
 echo ""
 echo "===== STEP 1: Creating App Registration ====="
-APP_ID=$($CLI ad app create --display-name "$APP_NAME" --query appId -o tsv)
-[ -z "$APP_ID" ] && handle_error "Failed to create App Registration."
-echo "[SUCCESS] App ID: $APP_ID"
+
+APP_LIST=$($CLI ad app list --filter "displayName eq '$APP_NAME'" \
+    --query "[].appId" -o tsv 2>/dev/null)
+APP_COUNT=$(echo "$APP_LIST" | grep -c '[^[:space:]]')
+
+if [ "$APP_COUNT" -gt 1 ]; then
+    echo "[WARNING] $APP_COUNT app registrations named '$APP_NAME' exist" \
+         "— earlier runs created duplicates. Using the first one;" \
+         "remove the extras manually."
+fi
+
+APP_ID=$(echo "$APP_LIST" | head -1)
+
+if [ -n "$APP_ID" ]; then
+    echo "[INFO] Reusing existing App Registration '$APP_NAME' (App ID: $APP_ID)."
+else
+    APP_ID=$($CLI ad app create --display-name "$APP_NAME" --query appId -o tsv)
+    [ -z "$APP_ID" ] && handle_error "Failed to create App Registration."
+    echo "[SUCCESS] App registration created. App ID: $APP_ID"
+fi
 
 echo "===== STEP 2: Creating Service Principal ====="
-SP_ID=$($CLI ad sp create --id "$APP_ID" --query id -o tsv)
-[ -z "$SP_ID" ] && handle_error "Failed to create Service Principal."
-echo "[SUCCESS] SP Object ID: $SP_ID"
+
+SP_ID=$($CLI ad sp show --id "$APP_ID" --query id -o tsv 2>/dev/null)
+
+if [ -n "$SP_ID" ]; then
+    echo "[INFO] Reusing existing Service Principal (SP Object ID: $SP_ID)."
+else
+    SP_ID=$($CLI ad sp create --id "$APP_ID" --query id -o tsv)
+    [ -z "$SP_ID" ] && \
+        handle_error "Failed to create Service Principal for appId '$APP_ID'."
+    echo "[SUCCESS] Service Principal created. SP Object ID: $SP_ID"
+fi
 
 echo "===== STEP 3: Assigning Owner role to Service Principal ====="
 $CLI role assignment create \
